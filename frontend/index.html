@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DCF Valuation Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:          #070b0f;
+  --surface:     #0d1117;
+  --surface2:    #161b22;
+  --surface3:    #21262d;
+  --border:      #30363d;
+  --border-soft: #21262d;
+  --text:        #e6edf3;
+  --muted:       #7d8590;
+  --dim:         #484f58;
+  --accent:      #58a6ff;
+  --accent-bg:   #0d1f3c;
+  --accent-dim:  #1f6feb;
+  --green:       #3fb950;
+  --green-bg:    #0d2218;
+  --red:         #f85149;
+  --red-bg:      #2d1117;
+  --yellow:      #e3b341;
+  --yellow-bg:   #2d1f00;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'IBM Plex Sans', sans-serif;
+  --r: 8px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;min-height:100vh}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--surface)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* Header */
+header{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:200}
+.logo{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.logo-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 2.5s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.kbd{font-family:var(--mono);font-size:10px;color:var(--dim);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:2px 7px}
+
+/* Layout */
+.container{max-width:1440px;margin:0 auto;padding:28px 28px 60px}
+.section-title{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.section-title::before{content:'';display:inline-block;width:3px;height:12px;background:var(--accent);border-radius:2px;flex-shrink:0}
+
+/* Input panel */
+.input-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:22px 26px 24px;margin-bottom:24px}
+.inputs-grid{display:grid;grid-template-columns:160px 1fr 1fr 1fr 1fr 1fr auto;gap:14px;align-items:end}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.field input{background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:14px;padding:8px 11px;outline:none;width:100%;transition:border-color .15s,background .15s}
+.field input:focus{border-color:var(--accent);background:var(--surface3)}
+.field input:disabled{opacity:.4;cursor:not-allowed}
+.ticker-input{font-size:17px !important;font-weight:600 !important;letter-spacing:.06em;text-transform:uppercase}
+.run-btn{height:38px;padding:0 24px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:6px;color:#fff;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;white-space:nowrap;transition:background .15s,transform .1s;display:flex;align-items:center;gap:7px}
+.run-btn:hover:not(:disabled){background:var(--accent)}
+.run-btn:active:not(:disabled){transform:scale(.97)}
+.run-btn:disabled{background:var(--surface3);border-color:var(--border);color:var(--dim);cursor:not-allowed}
+
+/* Status */
+.status{display:none;align-items:center;gap:9px;font-family:var(--mono);font-size:12px;padding:9px 14px;border-radius:6px;margin-bottom:20px;border:1px solid}
+.status.loading{display:flex;background:var(--surface2);border-color:var(--border);color:var(--muted)}
+.status.error{display:flex;background:var(--red-bg);border-color:var(--red);color:var(--red)}
+.status.warn{display:flex;background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow)}
+.spinner{width:13px;height:13px;flex-shrink:0;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#results{display:none}
+
+/* Cards */
+.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:22px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px 18px 14px}
+.card.accent{background:var(--accent-bg);border-color:var(--accent-dim)}
+.card-label{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:9px}
+.card-value{font-family:var(--mono);font-size:20px;font-weight:600;line-height:1;color:var(--text)}
+.card-sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:5px}
+.up{color:var(--green) !important}.down{color:var(--red) !important}
+
+/* Row 2 col */
+.row2{display:grid;grid-template-columns:1fr 360px;gap:18px;margin-bottom:22px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:22px 24px}
+.chart-wrap{position:relative;height:272px}
+
+/* EV Bridge */
+.ev-bridge{display:flex;flex-direction:column}
+.ev-row{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:12px;padding:9px 0;border-bottom:1px solid var(--border-soft)}
+.ev-row:last-of-type{border-bottom:none}
+.ev-row .k{color:var(--muted);font-size:11px}.ev-row .v{font-weight:600}
+.ev-row.total .k,.ev-row.total .v{color:var(--accent);font-size:13px}
+.ev-row.price-row .k{color:var(--text);font-weight:600}
+.ev-row.price-row .v{font-size:15px}
+.tv-box{margin-top:14px;padding:11px 13px;background:var(--yellow-bg);border:1px solid var(--yellow);border-radius:6px;font-family:var(--mono);font-size:11px;color:var(--yellow);line-height:1.55}
+.tv-box strong{display:block;margin-bottom:3px;font-size:12px}
+
+/* Table panel */
+.table-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:22px}
+.table-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border)}
+.tabs{display:flex;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px}
+.tab{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:5px 13px;border-radius:4px;cursor:pointer;border:none;background:transparent;color:var(--muted);transition:all .12s}
+.tab.active{background:var(--surface3);color:var(--text)}
+.table-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead tr{border-bottom:1px solid var(--border)}
+th{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:9px 14px;text-align:right;white-space:nowrap;background:var(--surface)}
+th:first-child{text-align:left}
+td{font-family:var(--mono);font-size:12px;color:var(--text);padding:8px 14px;text-align:right;border-bottom:1px solid var(--border-soft);white-space:nowrap}
+td:first-child{text-align:left;color:var(--muted);font-size:11px}
+tbody tr:hover{background:var(--surface2)}
+tbody tr:last-child td{border-bottom:none}
+td.pos{color:var(--green);font-weight:600}td.neg{color:var(--red);font-weight:600}td.bold{font-weight:600;color:var(--text)}
+
+/* Sensitivity */
+.sens-note{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px;letter-spacing:.04em;line-height:1.6}
+.legend-row{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--muted)}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.sens-wrap{overflow-x:auto}
+.sens-table{border-collapse:collapse;font-family:var(--mono);font-size:11px}
+.sens-table th,.sens-table td{padding:7px 16px;text-align:center;border:1px solid var(--border-soft)}
+.sens-table thead th{background:var(--surface2);color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.sens-table tbody td:first-child{background:var(--surface2);color:var(--muted);font-weight:600;font-size:10px;letter-spacing:.06em}
+/* Anchored to market price: green=undervalued, red=overvalued */
+.h5{background:#0d2e14;color:#3fb950}
+.h4{background:#0d2218;color:#56d364}
+.h3{background:var(--surface2);color:var(--text)}
+.h2{background:#2a1414;color:#f0856e}
+.h1{background:var(--red-bg);color:var(--red)}
+.base-cell{outline:2px solid var(--accent);outline-offset:-2px;color:var(--accent) !important;font-weight:700}
+
+/* Margin bars */
+.margin-bars{display:flex;flex-direction:column;gap:11px}
+.mb-row{display:flex;align-items:center;gap:12px}
+.mb-label{font-family:var(--mono);font-size:10px;color:var(--muted);width:115px;flex-shrink:0;letter-spacing:.03em}
+.mb-track{flex:1;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden}
+.mb-fill{height:100%;border-radius:3px;transition:width .6s ease}
+.mb-val{font-family:var(--mono);font-size:11px;color:var(--text);width:50px;text-align:right;flex-shrink:0}
+
+/* Assumptions */
+.assumptions-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:22px}
+.assumption{background:var(--surface);border:1px solid var(--border-soft);border-radius:6px;padding:12px 14px}
+.assumption .k{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.assumption .v{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text)}
+
+/* Warnings */
+.warnings{display:flex;flex-direction:column;gap:7px;margin-bottom:22px}
+.warning{display:flex;gap:8px;align-items:flex-start;background:var(--yellow-bg);border:1px solid var(--yellow);border-radius:6px;padding:9px 13px;font-family:var(--mono);font-size:11px;color:var(--yellow);line-height:1.5}
+.warning::before{content:'⚠';flex-shrink:0}
+
+/* Responsive */
+@media(max-width:1200px){
+  .inputs-grid{grid-template-columns:repeat(4,1fr)}
+  .cards{grid-template-columns:repeat(3,1fr)}
+  .row2{grid-template-columns:1fr}
+  .assumptions-grid{grid-template-columns:repeat(3,1fr)}
+}
+@media(max-width:700px){
+  .container{padding:14px}
+  .cards{grid-template-columns:1fr 1fr}
+  .assumptions-grid{grid-template-columns:1fr 1fr}
+  .inputs-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>DCF Valuation Engine</div>
+  <span class="kbd">Enter ↵ to run</span>
+</header>
+
+<div class="container">
+
+  <!-- Inputs -->
+  <div class="input-panel">
+    <div class="section-title">Model Parameters</div>
+    <div class="inputs-grid">
+      <div class="field">
+        <label>Ticker</label>
+        <input class="ticker-input" id="ticker" type="text" value="AAPL" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label>Revenue Growth %</label>
+        <input id="growth" type="number" value="8" step="0.5">
+      </div>
+      <div class="field">
+        <label>WACC %</label>
+        <input id="wacc" type="number" value="10" step="0.5" min="1" max="50">
+      </div>
+      <div class="field">
+        <label>Terminal Growth %</label>
+        <input id="tgr" type="number" value="2.5" step="0.25" min="0" max="10">
+      </div>
+      <div class="field">
+        <label>Tax Rate %</label>
+        <input id="taxRate" type="number" value="21" step="1" min="0" max="50">
+      </div>
+      <div class="field">
+        <label>Forecast Years</label>
+        <input id="years" type="number" value="5" min="1" max="10">
+      </div>
+      <button class="run-btn" id="runBtn" onclick="runValuation()">
+        <span id="btnIcon">▶</span><span id="btnLabel">Run Model</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="status" id="status">
+    <div class="spinner" id="spinner" style="display:none"></div>
+    <span id="statusMsg"></span>
+  </div>
+
+  <div id="results">
+
+    <!-- Summary Cards -->
+    <div class="cards" id="summaryCards"></div>
+
+    <!-- Chart + EV Bridge -->
+    <div class="row2">
+      <div class="panel">
+        <div class="section-title">Free Cash Flow — Historical vs. Projected (USD Billions)</div>
+        <div class="chart-wrap"><canvas id="fcfChart"></canvas></div>
+      </div>
+      <div class="panel" style="display:flex;flex-direction:column">
+        <div class="section-title">Enterprise Value Bridge</div>
+        <div class="ev-bridge" id="evBridge"></div>
+      </div>
+    </div>
+
+    <!-- Financial Tables -->
+    <div class="table-panel">
+      <div class="table-header">
+        <div class="section-title" style="margin:0">Financial Statements</div>
+        <div class="tabs">
+          <button class="tab active"  id="tab-income"   onclick="showTab('income')">Income Stmt</button>
+          <button class="tab"         id="tab-cashflow" onclick="showTab('cashflow')">Cash Flow</button>
+          <button class="tab"         id="tab-history"  onclick="showTab('history')">Historical</button>
+        </div>
+      </div>
+      <div class="table-scroll" id="tableBody"></div>
+    </div>
+
+    <!-- Sensitivity + Margin Bars -->
+    <div class="row2">
+      <div class="panel">
+        <div class="section-title">Sensitivity Analysis — Intrinsic Price (USD)</div>
+        <div class="sens-note">
+          Rows: WACC &nbsp;·&nbsp; Cols: Terminal Growth Rate &nbsp;·&nbsp;
+          <span style="color:var(--accent)" id="sensLabel">heatmap anchored to current price</span>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><div class="legend-swatch" style="background:#3fb950"></div>&gt;+30% upside</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#56d364"></div>+10–30%</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#21262d"></div>±10% (fair)</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#f0856e"></div>−10–30%</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#f85149"></div>&lt;−30% overvalued</div>
+        </div>
+        <div class="sens-wrap" id="sensTable"></div>
+      </div>
+      <div class="panel">
+        <div class="section-title">Trailing 3-yr Avg Margins (projection basis)</div>
+        <div class="margin-bars" id="marginBars"></div>
+      </div>
+    </div>
+
+    <!-- Assumptions -->
+    <div class="section-title">All Model Assumptions</div>
+    <div class="assumptions-grid" id="assumptionsGrid"></div>
+
+    <!-- Warnings -->
+    <div class="warnings" id="warningsList"></div>
+
+  </div>
+</div>
+
+<script>
+let D = null, fcfChart = null, activeTab = 'income';
+
+const pct  = v => v==null||isNaN(v) ? '—' : `${(v*100).toFixed(1)}%`;
+const bn   = v => v==null||isNaN(v) ? '—' : `$${Number(v).toFixed(2)}B`;
+const px   = v => v==null||isNaN(v) ? '—' : `$${Number(v).toFixed(2)}`;
+const sign = v => `${v>=0?'+':''}${pct(v)}`;
+
+function setStatus(type, msg) {
+  const el = document.getElementById('status');
+  el.className = `status ${type}`;
+  document.getElementById('statusMsg').textContent = msg;
+  document.getElementById('spinner').style.display = type==='loading' ? 'block' : 'none';
+  if (type==='none') el.style.display='none';
+}
+function setDisabled(v) {
+  ['ticker','growth','wacc','tgr','taxRate','years'].forEach(id => {
+    document.getElementById(id).disabled = v;
+  });
+}
+
+async function runValuation() {
+  const ticker  = document.getElementById('ticker').value.trim().toUpperCase();
+  const growth  = parseFloat(document.getElementById('growth').value) / 100;
+  const wacc    = parseFloat(document.getElementById('wacc').value)   / 100;
+  const tgr     = parseFloat(document.getElementById('tgr').value)    / 100;
+  const taxRate = parseFloat(document.getElementById('taxRate').value)/ 100;
+  const years   = parseInt(document.getElementById('years').value);
+
+  if (!ticker) { setStatus('error','Enter a ticker symbol.'); return; }
+  if (wacc <= tgr) {
+    setStatus('error', `WACC (${(wacc*100).toFixed(1)}%) must exceed Terminal Growth Rate (${(tgr*100).toFixed(1)}%).`);
+    return;
+  }
+
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  document.getElementById('btnIcon').textContent = '⏳';
+  document.getElementById('btnLabel').textContent = ticker;
+  setDisabled(true);
+  setStatus('loading', `Fetching ${ticker} financials from yfinance…`);
+  document.getElementById('results').style.display = 'none';
+
+  const payload = {
+    ticker, forecast_years: years,
+    revenue_growth_rate: growth, wacc, terminal_growth_rate: tgr, tax_rate: taxRate,
+    wacc_range: [0.07,0.08,0.09,0.10,0.11,0.12,0.13],
+    tgr_range:  [0.01,0.015,0.02,0.025,0.03,0.035,0.04],
+  };
+
+  try {
+    const res = await fetch('/api/valuation', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail||`HTTP ${res.status}`); }
+    D = await res.json();
+    renderAll(D);
+    setStatus('none','');
+    document.getElementById('results').style.display = 'block';
+    if (D.warnings?.length) setStatus('warn', `${D.warnings.length} data quality warning(s) — see bottom of page.`);
+  } catch(e) {
+    setStatus('error', `Error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    document.getElementById('btnIcon').textContent = '▶';
+    document.getElementById('btnLabel').textContent = 'Run Model';
+    setDisabled(false);
+  }
+}
+
+function renderAll(data) {
+  renderCards(data.summary);
+  renderChart(data);
+  renderEVBridge(data.summary);
+  renderTable(data, activeTab);
+  renderSensitivity(data.sensitivity, data.summary.current_price);
+  renderMarginBars(data.assumptions);
+  renderAssumptions(data.assumptions);
+  renderWarnings(data.warnings);
+}
+
+function renderCards(s) {
+  const up = s.upside_downside_pct;
+  const uc = up >= 0 ? 'up' : 'down';
+  document.getElementById('summaryCards').innerHTML = `
+    <div class="card accent">
+      <div class="card-label">Company</div>
+      <div class="card-value" style="font-size:17px">${s.ticker}</div>
+      <div class="card-sub">${s.company_name}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Market Price</div>
+      <div class="card-value">${px(s.current_price)}</div>
+      <div class="card-sub">Current</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Intrinsic Value (DCF)</div>
+      <div class="card-value ${uc}">${px(s.intrinsic_price)}</div>
+      <div class="card-sub ${uc}">${sign(up)} vs market</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Enterprise Value</div>
+      <div class="card-value">${bn(s.enterprise_value_bn)}</div>
+      <div class="card-sub">PV(FCF) + PV(TV)</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Equity Value</div>
+      <div class="card-value">${bn(s.equity_value_bn)}</div>
+      <div class="card-sub">EV − Net Debt</div>
+    </div>`;
+}
+
+function renderChart(data) {
+  const hL  = data.historical.map(r => r.year+' ●');
+  const hF  = data.historical.map(r => r.fcf);
+  const pL  = data.forecast.map(r => r.year);
+  const pF  = data.forecast.map(r => r.fcf);
+  const pD  = data.forecast.map(r => r.discounted_fcf);
+  const all = [...hL, ...pL];
+  const hp  = Array(hL.length).fill(null);
+  const pp  = Array(pL.length).fill(null);
+
+  if (fcfChart) fcfChart.destroy();
+
+  // vertical dashed divider between historical/projected
+  const divider = {
+    id:'divider',
+    afterDraw(chart) {
+      const hc = hL.length;
+      if (!hc || hc >= all.length) return;
+      const xs = chart.scales.x;
+      const x  = (xs.getPixelForTick(hc-1) + xs.getPixelForTick(hc)) / 2;
+      const {top,bottom} = chart.chartArea;
+      const c2 = chart.ctx;
+      c2.save();
+      c2.strokeStyle='#30363d'; c2.lineWidth=1; c2.setLineDash([4,4]);
+      c2.beginPath(); c2.moveTo(x,top); c2.lineTo(x,bottom); c2.stroke();
+      c2.setLineDash([]);
+      c2.fillStyle='#484f58'; c2.font="10px 'IBM Plex Mono'"; c2.textAlign='center';
+      c2.fillText('PROJECTED →', x+55, top+14);
+      c2.restore();
+    }
+  };
+
+  fcfChart = new Chart(document.getElementById('fcfChart').getContext('2d'), {
+    plugins:[divider],
+    data: {
+      labels: all,
+      datasets:[
+        {type:'bar', label:'Historical FCF', data:[...hF,...pp],
+         backgroundColor:'rgba(88,166,255,.18)',borderColor:'#58a6ff',borderWidth:1.5,borderRadius:3},
+        {type:'bar', label:'Projected FCF',  data:[...hp,...pF],
+         backgroundColor:'rgba(63,185,80,.18)',borderColor:'#3fb950',borderWidth:1.5,borderRadius:3},
+        {type:'line',label:'Discounted FCF (PV)', data:[...hp,...pD],
+         borderColor:'#e3b341',borderWidth:2,pointRadius:4,pointBackgroundColor:'#e3b341',tension:.3,fill:false},
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{labels:{color:'#7d8590',font:{family:"'IBM Plex Mono'",size:11},boxWidth:11,boxHeight:11}},
+        tooltip:{backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+          titleColor:'#e6edf3',bodyColor:'#7d8590',
+          titleFont:{family:"'IBM Plex Mono'",size:12},bodyFont:{family:"'IBM Plex Mono'",size:11},
+          callbacks:{label:c=>` ${c.dataset.label}: ${c.parsed.y!=null?'$'+c.parsed.y.toFixed(2)+'B':'—'}`}}
+      },
+      scales:{
+        x:{grid:{color:'#21262d'},ticks:{color:'#7d8590',font:{family:"'IBM Plex Mono'",size:10}}},
+        y:{grid:{color:'#21262d'},ticks:{color:'#7d8590',font:{family:"'IBM Plex Mono'",size:10},callback:v=>`$${v.toFixed(1)}B`}}
+      }
+    }
+  });
+}
+
+function renderEVBridge(s) {
+  const tvPct = (s.terminal_value_pct_of_ev*100).toFixed(1);
+  const hi    = parseFloat(tvPct) > 70;
+  document.getElementById('evBridge').innerHTML = `
+    <div class="ev-row"><span class="k">Σ PV of Forecast FCFs</span><span class="v">${bn(s.sum_pv_fcf_bn)}</span></div>
+    <div class="ev-row"><span class="k">+ PV of Terminal Value</span><span class="v">${bn(s.pv_terminal_value_bn)}</span></div>
+    <div class="ev-row total"><span class="k">= Enterprise Value</span><span class="v">${bn(s.enterprise_value_bn)}</span></div>
+    <div class="ev-row"><span class="k">− Net Debt</span><span class="v">${bn(s.net_debt_bn)}</span></div>
+    <div class="ev-row total"><span class="k">= Equity Value</span><span class="v">${bn(s.equity_value_bn)}</span></div>
+    <div class="ev-row"><span class="k">÷ Diluted Shares</span><span class="v">${s.shares_outstanding_bn.toFixed(2)}B</span></div>
+    <div class="ev-row price-row total"><span class="k">= Intrinsic Price</span><span class="v">${px(s.intrinsic_price)}</span></div>
+    <div class="tv-box">
+      <strong>Terminal Value = ${tvPct}% of Enterprise Value</strong>
+      ${hi
+        ? 'High TV dependency. Small changes in WACC or g will meaningfully shift the intrinsic price — use the sensitivity table to understand the range.'
+        : 'TV is within a normal range. The explicit forecast period captures meaningful value.'}
+    </div>`;
+}
+
+function showTab(tab) {
+  activeTab = tab;
+  ['income','cashflow','history'].forEach(t => {
+    document.getElementById('tab-'+t).classList.toggle('active', t===tab);
+  });
+  if (D) renderTable(D, tab);
+}
+
+function renderTable(data, tab) {
+  let html = '';
+  const waccVal = parseFloat(document.getElementById('wacc').value)/100;
+
+  if (tab === 'income') {
+    // Income statement reconciles: Revenue - COGS = GP, GP - OpEx = EBIT
+    html = `<table><thead><tr>
+      <th>Year</th><th>Revenue</th><th>− COGS</th><th>= Gross Profit</th>
+      <th>GP Margin</th><th>− OpEx</th><th>= EBIT</th><th>EBIT Margin</th><th>NOPAT</th>
+    </tr></thead><tbody>`;
+    data.forecast.forEach(r => {
+      const gpM   = r.revenue>0 ? pct(r.gross_profit/r.revenue) : '—';
+      const ebitM = r.revenue>0 ? pct(r.ebit/r.revenue) : '—';
+      html += `<tr>
+        <td class="bold">${r.year}</td>
+        <td>${bn(r.revenue)}</td><td>${bn(r.cogs)}</td>
+        <td class="bold">${bn(r.gross_profit)}</td><td>${gpM}</td>
+        <td>${bn(r.opex)}</td>
+        <td class="bold">${bn(r.ebit)}</td><td>${ebitM}</td>
+        <td>${bn(r.nopat)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  }
+  else if (tab === 'cashflow') {
+    // FCF bridge: NOPAT + D&A - CapEx - DeltaWC = FCF
+    html = `<table><thead><tr>
+      <th>Year</th><th>NOPAT</th><th>+ D&A</th><th>− CapEx</th>
+      <th>− ΔWC</th><th>= FCF</th><th>Disc. Factor</th><th>PV(FCF)</th><th>Cumul. PV</th>
+    </tr></thead><tbody>`;
+    data.forecast.forEach((r, i) => {
+      const df  = (1 + waccVal) ** (i+1);
+      const cls = r.fcf >= 0 ? 'pos' : 'neg';
+      html += `<tr>
+        <td class="bold">${r.year}</td>
+        <td>${bn(r.nopat)}</td><td>${bn(r.da)}</td><td>${bn(r.capex)}</td>
+        <td style="color:${r.delta_wc>0?'var(--red)':'var(--green)'}">
+          ${r.delta_wc >= 0 ? '+' : ''}${bn(r.delta_wc)}</td>
+        <td class="${cls}">${bn(r.fcf)}</td>
+        <td style="color:var(--muted)">${df.toFixed(3)}×</td>
+        <td>${bn(r.discounted_fcf)}</td>
+        <td class="bold">${bn(r.pv_cumulative)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  }
+  else { // historical
+    html = `<table><thead><tr>
+      <th>Year</th><th>Revenue</th><th>COGS</th><th>Gross Profit</th>
+      <th>EBIT</th><th>EBIT Margin</th><th>D&A</th><th>CapEx</th><th>FCF</th>
+    </tr></thead><tbody>`;
+    data.historical.forEach(r => {
+      const ebitM = r.revenue > 0 ? pct(r.ebit/r.revenue) : '—';
+      const cls   = r.fcf >= 0 ? 'pos' : 'neg';
+      html += `<tr>
+        <td class="bold">${r.year}</td>
+        <td>${bn(r.revenue)}</td><td>${bn(r.cogs)}</td>
+        <td>${bn(r.gross_profit)}</td>
+        <td>${bn(r.ebit)}</td><td>${ebitM}</td>
+        <td>${bn(r.da)}</td><td>${bn(r.capex)}</td>
+        <td class="${cls}">${bn(r.fcf)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  }
+  document.getElementById('tableBody').innerHTML = html;
+}
+
+function renderSensitivity(sens, currentPrice) {
+  document.getElementById('sensLabel').textContent =
+    currentPrice > 0 ? `anchored to market price ${px(currentPrice)}` : 'anchored to current price';
+
+  const {wacc_values, tgr_values, prices, base_wacc, base_tgr} = sens;
+
+  function heatClass(v) {
+    if (!v || isNaN(v) || currentPrice <= 0) return 'h3';
+    const u = (v - currentPrice) / currentPrice;
+    if (u >  0.30) return 'h5';
+    if (u >  0.10) return 'h4';
+    if (u > -0.10) return 'h3';
+    if (u > -0.30) return 'h2';
+    return 'h1';
+  }
+
+  let html = `<table class="sens-table"><thead><tr><th>WACC \\ TGR</th>`;
+  tgr_values.forEach(t => { html += `<th>${(t*100).toFixed(1)}%</th>`; });
+  html += `</tr></thead><tbody>`;
+  wacc_values.forEach((w, wi) => {
+    html += `<tr><td>${(w*100).toFixed(1)}%</td>`;
+    tgr_values.forEach((t, ti) => {
+      const v    = prices[wi]?.[ti];
+      const base = Math.abs(w-base_wacc)<.001 && Math.abs(t-base_tgr)<.001;
+      const cls  = base ? `${heatClass(v)} base-cell` : heatClass(v);
+      html += `<td class="${cls}">${v&&!isNaN(v) ? px(v) : 'N/A'}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('sensTable').innerHTML = html;
+}
+
+function renderMarginBars(a) {
+  const items = [
+    ['COGS / Rev',      a.cogs_margin_used,   '#58a6ff'],
+    ['Gross Margin',    1-a.cogs_margin_used,  '#3fb950'],
+    ['OpEx / Rev',      a.opex_margin_used,    '#e3b341'],
+    ['EBIT Margin',     a.ebit_margin_used,    '#79c0ff'],
+    ['D&A / Rev',       a.da_margin_used,      '#56d364'],
+    ['CapEx / Rev',     a.capex_margin_used,   '#f0856e'],
+    ['WC / Rev',        a.wc_margin_used,      '#8b949e'],
+  ];
+  document.getElementById('marginBars').innerHTML = items.map(([label, val, color]) => {
+    const w = Math.min(100, Math.abs(val*100)*2).toFixed(1);
+    return `<div class="mb-row">
+      <span class="mb-label">${label}</span>
+      <div class="mb-track"><div class="mb-fill" style="width:${w}%;background:${color}"></div></div>
+      <span class="mb-val">${pct(val)}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderAssumptions(a) {
+  const items = [
+    ['Revenue Growth',   pct(a.revenue_growth_rate)],
+    ['WACC',             pct(a.wacc)],
+    ['Terminal Growth',  pct(a.terminal_growth_rate)],
+    ['Tax Rate',         pct(a.tax_rate)],
+    ['Forecast Years',   a.forecast_years],
+    ['Base Revenue',     bn(a.base_revenue_bn)],
+    ['COGS Margin',      pct(a.cogs_margin_used)],
+    ['OpEx Margin',      pct(a.opex_margin_used)],
+    ['EBIT Margin',      pct(a.ebit_margin_used)],
+    ['D&A Margin',       pct(a.da_margin_used)],
+    ['CapEx Margin',     pct(a.capex_margin_used)],
+    ['WC Margin',        pct(a.wc_margin_used)],
+  ];
+  document.getElementById('assumptionsGrid').innerHTML =
+    items.map(([k,v]) => `<div class="assumption"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+}
+
+function renderWarnings(warnings) {
+  document.getElementById('warningsList').innerHTML =
+    (warnings||[]).map(w => `<div class="warning">${w}</div>`).join('');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key==='Enter' && document.activeElement.tagName!=='BUTTON') runValuation();
+});
+</script>
+</body>
+</html>
